@@ -1,0 +1,8 @@
+{
+  "name": "Obragest - Gestão de Obras e Construção Civil",
+  "description": "Aplicação profissional de gestão de obras, faturas com análise inteligente, inventários, orçamentos, trabalhadores, despesas e apuramento de IVA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
