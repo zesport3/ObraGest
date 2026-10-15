@@ -16,6 +16,7 @@ import {
   ArrowRight,
   List,
   LayoutGrid,
+  Wallet,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Work, WorkStatus } from '../../types';
@@ -59,14 +60,19 @@ export const WorksView: React.FC<WorksViewProps> = ({ onSelectWork }) => {
   const completedCount = works.filter((w) => w.status === 'Concluída').length;
 
   let totalRevenue = 0;
+  let totalReceived = 0;
+  let totalPending = 0;
   let totalCost = 0;
   works.forEach((w) => {
     const fin = calculateWorkFinancials(w, stockMovements, workHourLogs);
     totalRevenue += fin.revenue;
+    totalReceived += fin.receivedTotal;
+    totalPending += fin.pendingAmount;
     totalCost += fin.totalCost;
   });
   const totalProfit = totalRevenue - totalCost;
   const overallMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+  const totalCashBalance = totalReceived - totalCost;
 
   const statusVariant: Record<WorkStatus, 'warning' | 'success' | 'info' | 'danger' | 'neutral'> = {
     'Em curso': 'warning',
@@ -81,10 +87,18 @@ export const WorksView: React.FC<WorksViewProps> = ({ onSelectWork }) => {
       {/* Top Financial Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Faturação Total Obras"
+          title="Total Contratado (Obras)"
           value={formatCurrency(totalRevenue)}
           subtext={`${works.length} obras cadastradas`}
-          icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
+          icon={<TrendingUp className="h-5 w-5 text-amber-600" />}
+          highlight="warning"
+        />
+
+        <StatCard
+          title="Total Já Recebido"
+          value={formatCurrency(totalReceived)}
+          subtext={`Pendente a receber: ${formatCurrency(totalPending)} (${totalRevenue > 0 ? ((totalReceived / totalRevenue) * 100).toFixed(0) : 0}%)`}
+          icon={<Wallet className="h-5 w-5 text-emerald-600" />}
           highlight="success"
         />
 
@@ -97,19 +111,11 @@ export const WorksView: React.FC<WorksViewProps> = ({ onSelectWork }) => {
         />
 
         <StatCard
-          title="Resultado (Lucro)"
-          value={formatCurrency(totalProfit)}
-          subtext={`Margem média global: ${formatPercent(overallMargin)}`}
-          icon={<HardHat className="h-5 w-5 text-amber-600" />}
-          highlight="primary"
-        />
-
-        <StatCard
-          title="Obras em Execução"
-          value={String(activeCount)}
-          subtext={`${completedCount} empreitadas já concluídas`}
-          icon={<Clock className="h-5 w-5 text-purple-600" />}
-          highlight="warning"
+          title="Saldo Real em Caixa"
+          value={formatCurrency(totalCashBalance)}
+          subtext={`Lucro total previsto: ${formatCurrency(totalProfit)} (${formatPercent(overallMargin)})`}
+          icon={<HardHat className="h-5 w-5 text-blue-600" />}
+          highlight={totalCashBalance >= 0 ? 'primary' : 'danger'}
         />
       </div>
 
@@ -195,10 +201,10 @@ export const WorksView: React.FC<WorksViewProps> = ({ onSelectWork }) => {
                   <th className="p-3.5">Obra / Empreitada</th>
                   <th className="p-3.5">Cliente & Localização</th>
                   <th className="p-3.5">Período</th>
-                  <th className="p-3.5 text-right">Receita (Adjudicado)</th>
-                  <th className="p-3.5 text-right">Custo Acumulado</th>
-                  <th className="p-3.5 text-right">Resultado (Lucro)</th>
-                  <th className="p-3.5 text-right">Margem</th>
+                  <th className="p-3.5 text-right">Contratado</th>
+                  <th className="p-3.5 text-right">Já Recebido</th>
+                  <th className="p-3.5 text-right">Custo Real</th>
+                  <th className="p-3.5 text-right">Saldo em Caixa</th>
                   <th className="p-3.5 text-right">Ações</th>
                 </tr>
               </thead>
@@ -256,26 +262,34 @@ export const WorksView: React.FC<WorksViewProps> = ({ onSelectWork }) => {
                         <td className="p-3.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
                           {formatCurrency(fin.revenue)}
                         </td>
+                        <td className="p-3.5 text-right whitespace-nowrap">
+                          <div className="font-mono font-bold text-emerald-600">
+                            {formatCurrency(fin.receivedTotal)}
+                          </div>
+                          <div className="text-[10px]">
+                            {fin.revenue > 0 ? (
+                              fin.receivedTotal >= fin.revenue ? (
+                                <span className="text-emerald-700 font-semibold">100% Liquidado</span>
+                              ) : fin.receivedTotal > 0 ? (
+                                <span className="text-amber-700 font-medium">{fin.receivedPercent.toFixed(0)}% • Falta {formatCurrency(fin.pendingAmount)}</span>
+                              ) : (
+                                <span className="text-slate-400">Por receber</span>
+                              )
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </div>
+                        </td>
                         <td className="p-3.5 text-right font-mono font-semibold text-rose-600 whitespace-nowrap">
                           {formatCurrency(fin.totalCost)}
                         </td>
                         <td className="p-3.5 text-right font-mono font-bold whitespace-nowrap">
-                          <span className={fin.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                            {formatCurrency(fin.profit)}
+                          <span className={fin.cashBalance >= 0 ? 'text-blue-700' : 'text-rose-600'}>
+                            {formatCurrency(fin.cashBalance)}
                           </span>
-                        </td>
-                        <td className="p-3.5 text-right font-medium text-slate-700 whitespace-nowrap">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
-                              fin.marginPercent >= 20
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : fin.marginPercent >= 0
-                                ? 'bg-amber-50 text-amber-700'
-                                : 'bg-rose-50 text-rose-700'
-                            }`}
-                          >
-                            {formatPercent(fin.marginPercent)}
-                          </span>
+                          <div className="text-[10px] text-slate-400 font-normal">
+                            Lucro prev: {formatCurrency(fin.profit)}
+                          </div>
                         </td>
                         <td
                           className="p-3.5 text-right whitespace-nowrap"
@@ -364,31 +378,34 @@ export const WorksView: React.FC<WorksViewProps> = ({ onSelectWork }) => {
                     {/* Financial Highlights */}
                     <div className="mt-4 grid grid-cols-2 gap-2 text-xs border-t border-slate-100 pt-3">
                       <div>
-                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Receita</span>
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Contratado</span>
                         <span className="font-mono font-bold text-slate-900 text-sm">
                           {formatCurrency(fin.revenue)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Custo Acumulado</span>
-                        <span className="font-mono font-bold text-rose-600 text-sm">
-                          {formatCurrency(fin.totalCost)}
+                        <span className="text-[10px] text-emerald-800 uppercase font-semibold block">Já Recebido</span>
+                        <span className="font-mono font-bold text-emerald-600 text-sm">
+                          {formatCurrency(fin.receivedTotal)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block">
+                          {fin.revenue > 0 ? `${fin.receivedPercent.toFixed(0)}% recebido` : '—'}
                         </span>
                       </div>
                     </div>
 
-                    {/* Profit & Margin Bar */}
-                    <div className="mt-3 rounded-lg bg-slate-50 p-2.5 flex items-center justify-between text-xs">
+                    {/* Cost & Real Cash Balance */}
+                    <div className="mt-2.5 rounded-lg bg-slate-50 p-2.5 flex items-center justify-between text-xs">
                       <div>
-                        <span className="text-[10px] text-slate-500 uppercase block">Lucro Previsto</span>
-                        <span className={`font-mono font-bold ${fin.profit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                          {formatCurrency(fin.profit)}
+                        <span className="text-[10px] text-slate-500 uppercase block">Custo Real</span>
+                        <span className="font-mono font-bold text-rose-600">
+                          {formatCurrency(fin.totalCost)}
                         </span>
                       </div>
                       <div className="text-right">
-                        <span className="text-[10px] text-slate-500 uppercase block">Margem</span>
-                        <span className="font-bold text-slate-900">
-                          {formatPercent(fin.marginPercent)}
+                        <span className="text-[10px] text-slate-500 uppercase block">Saldo de Caixa Real</span>
+                        <span className={`font-mono font-bold ${fin.cashBalance >= 0 ? 'text-blue-700' : 'text-rose-600'}`}>
+                          {formatCurrency(fin.cashBalance)}
                         </span>
                       </div>
                     </div>

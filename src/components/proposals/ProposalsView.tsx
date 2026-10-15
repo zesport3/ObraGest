@@ -252,12 +252,13 @@ export const ProposalsView: React.FC<{
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setEditingProposal(prop);
                             setIsEditorOpen(true);
                           }}
-                          className="rounded p-1 text-slate-400 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
-                          title="Editar Orçamento"
+                          className="rounded p-1 text-slate-500 hover:text-amber-700 hover:bg-amber-50 cursor-pointer transition-colors"
+                          title="Editar Orçamento (caso de engano, alterar valores, cliente ou descrição)"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>

@@ -107,11 +107,27 @@ export function calculateWorkFinancials(
 
   const totalCost = materialCost + laborCost + otherCostsTotal;
   const revenue = Number(work.revenue) || 0;
+
+  // Received payments (valores já recebidos indicados pelo utilizador)
+  const payments = work.payments || [];
+  const receivedTotal = payments.reduce(
+    (sum, p) => sum + (Number(p.amount) || 0),
+    0
+  );
+  const pendingAmount = Math.max(0, revenue - receivedTotal);
+  const receivedPercent = revenue > 0 ? (receivedTotal / revenue) * 100 : 0;
+  // Saldo real de caixa: o que foi efetivamente recebido menos os custos reais incorridos
+  const cashBalance = receivedTotal - totalCost;
+  // Lucro total contratado/previsto
   const profit = revenue - totalCost;
   const marginPercent = revenue > 0 ? (profit / revenue) * 100 : 0;
 
   return {
     revenue,
+    receivedTotal,
+    pendingAmount,
+    receivedPercent,
+    cashBalance,
     materialCost,
     laborCost,
     laborHours,
@@ -239,10 +255,14 @@ export function calculateDashboardSummary({
 
   let totalWorksCost = 0;
   let totalWorksRevenue = 0;
+  let totalWorksReceived = 0;
+  let totalWorksPending = 0;
   works.forEach((w) => {
     const fin = calculateWorkFinancials(w, stockMovements, workHourLogs);
     totalWorksCost += fin.totalCost;
     totalWorksRevenue += fin.revenue;
+    totalWorksReceived += fin.receivedTotal;
+    totalWorksPending += fin.pendingAmount;
   });
   const totalWorksResult = totalWorksRevenue - totalWorksCost;
 
@@ -285,6 +305,8 @@ export function calculateDashboardSummary({
       completedCount: completedWorksCount,
       totalCost: totalWorksCost,
       totalRevenue: totalWorksRevenue,
+      totalReceived: totalWorksReceived,
+      totalPending: totalWorksPending,
       totalResult: totalWorksResult,
     },
     proposals: {

@@ -2,8 +2,9 @@ import React, { useRef, useState } from 'react';
 import { Proposal } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { Printer, ArrowLeft, HardHat, Download, Loader2 } from 'lucide-react';
+import { Printer, ArrowLeft, HardHat, Download, Loader2, Edit2 } from 'lucide-react';
 import { downloadElementAsPdf, generateProposalDirectPdf } from '../../utils/pdfGenerator';
+import { ProposalEditorModal } from './ProposalEditorModal';
 
 interface ProposalPrintViewProps {
   proposal: Proposal;
@@ -11,12 +12,16 @@ interface ProposalPrintViewProps {
 }
 
 export const ProposalPrintView: React.FC<ProposalPrintViewProps> = ({
-  proposal,
+  proposal: initialProposal,
   onBack,
 }) => {
-  const { companySettings } = useApp();
+  const { companySettings, proposals } = useApp();
   const documentRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // Keep live reference to proposal in case of edits
+  const proposal = proposals.find((p) => p.id === initialProposal.id) || initialProposal;
 
   const handleDownloadPdf = async () => {
     const filename = `Orcamento_${proposal.number.replace(/[\/\\]/g, '_')}.pdf`;
@@ -67,6 +72,17 @@ export const ProposalPrintView: React.FC<ProposalPrintViewProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
+          {/* Editar Orçamento em caso de engano */}
+          <button
+            type="button"
+            onClick={() => setIsEditModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-800 shadow-2xs transition-colors cursor-pointer"
+            title="Editar este orçamento para corrigir qualquer engano ou alteração"
+          >
+            <Edit2 className="h-4 w-4 text-amber-600" />
+            <span>Editar Orçamento</span>
+          </button>
+
           {/* Transferir PDF para o computador */}
           <button
             type="button"
@@ -280,6 +296,13 @@ export const ProposalPrintView: React.FC<ProposalPrintViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Editor Modal for in-place corrections */}
+      <ProposalEditorModal
+        proposal={proposal}
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+      />
     </div>
   );
 };

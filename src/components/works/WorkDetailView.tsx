@@ -4,8 +4,12 @@ import {
   WorkStatus,
   StockMovement,
   WorkHourLog,
+  Proposal,
+  WorkPayment,
 } from '../../types';
 import { useApp } from '../../context/AppContext';
+import { ProposalEditorModal } from '../proposals/ProposalEditorModal';
+import { WorkPaymentModal } from './WorkPaymentModal';
 import {
   calculateWorkFinancials,
 } from '../../utils/calculations';
@@ -27,6 +31,8 @@ import {
   AlertTriangle,
   Clock,
   Edit2,
+  Wallet,
+  CheckCircle2,
 } from 'lucide-react';
 import { StatCard } from '../common/StatCard';
 import { Badge } from '../common/Badge';
@@ -52,14 +58,19 @@ export const WorkDetailView: React.FC<WorkDetailViewProps> = ({
     proposals,
     addWorkOtherCost,
     removeWorkOtherCost,
+    removeWorkPayment,
     updateWork,
     deleteWork,
   } = useApp();
 
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'materials' | 'labor' | 'otherCosts'>('overview');
+  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'payments' | 'materials' | 'labor' | 'otherCosts'>('overview');
   const [isAssignMaterialOpen, setIsAssignMaterialOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<WorkPayment | null>(null);
+  const [deletingPayment, setDeletingPayment] = useState<WorkPayment | null>(null);
   const [isEditWorkOpen, setIsEditWorkOpen] = useState(false);
   const [isDeletingWork, setIsDeletingWork] = useState(false);
+  const [editingProposalFromWork, setEditingProposalFromWork] = useState<Proposal | null>(null);
 
   // New Other Cost form state
   const [showAddOtherCost, setShowAddOtherCost] = useState(false);
@@ -166,18 +177,41 @@ export const WorkDetailView: React.FC<WorkDetailViewProps> = ({
               Início: {formatDate(currentWork.startDate)} • Previsto: {formatDate(currentWork.estimatedEndDate)}
             </span>
             {currentWork.proposalNumber && (
-              <span className="flex items-center gap-1 font-mono text-amber-700 font-semibold">
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-                {currentWork.proposalNumber}
-              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const p = proposals.find(
+                    (x) => x.id === currentWork.proposalId || x.number === currentWork.proposalNumber
+                  );
+                  if (p) {
+                    setEditingProposalFromWork(p);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 font-mono text-amber-900 font-semibold bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-300 transition-colors cursor-pointer text-xs"
+                title="Clique para ver ou editar este orçamento em caso de engano"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5 text-amber-600" />
+                <span>Orçamento: {currentWork.proposalNumber}</span>
+                <Edit2 className="h-3 w-3 text-amber-600 ml-0.5" />
+              </button>
             )}
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
           <button
+            onClick={() => {
+              setEditingPayment(null);
+              setIsPaymentModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition-colors cursor-pointer"
+          >
+            <Wallet className="h-3.5 w-3.5" />
+            + Registar Recebimento
+          </button>
+          <button
             onClick={() => setIsAssignMaterialOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 px-3.5 py-2 text-xs font-bold text-slate-950 shadow-xs transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 px-3.5 py-2 text-xs font-bold text-slate-950 shadow-xs transition-colors cursor-pointer"
           >
             <Boxes className="h-3.5 w-3.5" />
             + Material da Obra
@@ -201,60 +235,78 @@ export const WorkDetailView: React.FC<WorkDetailViewProps> = ({
 
       {/* RENTABILIDADE: 4 Top Financial Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* RECEITA DA OBRA */}
+        {/* VALOR CONTRATADO DA OBRA */}
         <StatCard
-          title="Receita da Obra"
+          title="Valor Contratado (Obra)"
           value={formatCurrency(financials.revenue)}
-          subtext="Valor contratado (sem IVA)"
-          icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
-          highlight="success"
+          subtext="Total orçamentado / adjudicado"
+          icon={<TrendingUp className="h-5 w-5 text-amber-600" />}
+          highlight="warning"
         />
 
-        {/* CUSTO TOTAL */}
+        {/* VALORES JÁ RECEBIDOS (NÃO ASSUME AUTOMÁTICO) */}
+        <StatCard
+          title="Total Já Recebido"
+          value={formatCurrency(financials.receivedTotal)}
+          subtext={`Pendente: ${formatCurrency(financials.pendingAmount)} (${financials.receivedPercent.toFixed(1)}% recebido)`}
+          icon={<Wallet className="h-5 w-5 text-emerald-600" />}
+          highlight={
+            financials.receivedTotal >= financials.revenue && financials.revenue > 0
+              ? 'success'
+              : financials.receivedTotal > 0
+              ? 'warning'
+              : 'default'
+          }
+        />
+
+        {/* CUSTO TOTAL ACUMULADO */}
         <StatCard
           title="Custo Total Acumulado"
           value={formatCurrency(financials.totalCost)}
-          subtext="Materiais + Mão-de-Obra + Custos Diretos"
+          subtext="Materiais + Horas + Custos Diretos"
           icon={<CreditCard className="h-5 w-5 text-rose-600" />}
           highlight="danger"
         />
 
-        {/* RESULTADO DA OBRA */}
+        {/* SALDO REAL DE CAIXA (RECEBIDO - CUSTO) */}
         <StatCard
-          title="Resultado (Lucro)"
-          value={formatCurrency(financials.profit)}
-          subtext="Receita contratada menos custo total"
+          title="Saldo Real de Caixa"
+          value={formatCurrency(financials.cashBalance)}
+          subtext={`Lucro previsto no fecho: ${formatCurrency(financials.profit)} (${financials.marginPercent.toFixed(1)}%)`}
           icon={<Scale className="h-5 w-5 text-blue-600" />}
-          highlight={financials.profit >= 0 ? 'primary' : 'danger'}
-        />
-
-        {/* MARGEM % */}
-        <StatCard
-          title="Margem de Lucro"
-          value={formatPercent(financials.marginPercent)}
-          subtext="Margem percentual sobre a receita"
-          icon={<Percent className="h-5 w-5 text-purple-600" />}
-          highlight={financials.marginPercent >= 20 ? 'success' : 'warning'}
+          highlight={financials.cashBalance >= 0 ? 'success' : 'danger'}
         />
       </div>
 
       {/* Sub Tabs Navigation */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-slate-200 overflow-x-auto">
         <button
           onClick={() => setActiveSubTab('overview')}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeSubTab === 'overview'
               ? 'border-amber-500 text-amber-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <Scale className="h-4 w-4" />
-          <span>Resumo & Análise de Custos</span>
+          <span>Resumo & Análise Financeira</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('payments')}
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'payments'
+              ? 'border-emerald-500 text-emerald-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Wallet className="h-4 w-4" />
+          <span>Recebimentos & Tranches ({(currentWork.payments || []).length})</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('materials')}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeSubTab === 'materials'
               ? 'border-amber-500 text-amber-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -266,7 +318,7 @@ export const WorkDetailView: React.FC<WorkDetailViewProps> = ({
 
         <button
           onClick={() => setActiveSubTab('labor')}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeSubTab === 'labor'
               ? 'border-amber-500 text-amber-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -278,7 +330,7 @@ export const WorkDetailView: React.FC<WorkDetailViewProps> = ({
 
         <button
           onClick={() => setActiveSubTab('otherCosts')}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
             activeSubTab === 'otherCosts'
               ? 'border-amber-500 text-amber-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -438,7 +490,260 @@ export const WorkDetailView: React.FC<WorkDetailViewProps> = ({
                 <div className="inline-block mt-2 rounded-full px-3 py-0.5 text-xs font-bold bg-white/80 shadow-2xs">
                   Margem: {formatPercent(financials.marginPercent)}
                 </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-200/60 text-xs text-left space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-600">Recebido do Cliente:</span>
+                    <span className="font-mono font-bold text-emerald-700">
+                      {formatCurrency(financials.receivedTotal)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="text-slate-500">Pendente a receber:</span>
+                    <span className="font-mono text-amber-700 font-semibold">
+                      {formatCurrency(financials.pendingAmount)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubTab('payments')}
+                    className="w-full mt-2 text-center text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 py-1.5 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                  >
+                    Gerir Recebimentos ({(currentWork.payments || []).length}) →
+                  </button>
+                </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUBTAB: RECEBIMENTOS & TRANCHES */}
+      {activeSubTab === 'payments' && (
+        <div className="space-y-6">
+          {/* Header Progress & Status */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Wallet className="h-4 w-4 text-emerald-600" />
+                  Controlo de Recebimentos da Obra
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  O sistema não assume recebimento antecipado. Indique aqui cada adiantamento ou tranche paga pelo cliente.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingPayment(null);
+                  setIsPaymentModalOpen(true);
+                }}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-xs transition-colors shrink-0 cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                <span>+ Registar Recebimento</span>
+              </button>
+            </div>
+
+            {/* Financial Status Breakdown */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2">
+              <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-3.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                  Valor Contratado (Obra)
+                </span>
+                <span className="text-lg font-mono font-bold text-slate-900 mt-0.5 block">
+                  {formatCurrency(financials.revenue)}
+                </span>
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  {currentWork.proposalNumber ? `Orçamento: ${currentWork.proposalNumber}` : 'Valor total adjudicado'}
+                </span>
+              </div>
+
+              <div className="rounded-xl bg-emerald-50/70 border border-emerald-200 p-3.5">
+                <span className="text-[10px] uppercase font-bold text-emerald-800 block tracking-wider">
+                  Total Já Recebido
+                </span>
+                <span className="text-lg font-mono font-bold text-emerald-700 mt-0.5 block">
+                  {formatCurrency(financials.receivedTotal)}
+                </span>
+                <span className="text-[11px] text-emerald-800 font-medium mt-1 block">
+                  {financials.receivedPercent.toFixed(1)}% do valor da obra
+                </span>
+              </div>
+
+              <div className="rounded-xl bg-amber-50/70 border border-amber-200 p-3.5">
+                <span className="text-[10px] uppercase font-bold text-amber-800 block tracking-wider">
+                  Pendente a Receber
+                </span>
+                <span className="text-lg font-mono font-bold text-amber-700 mt-0.5 block">
+                  {formatCurrency(financials.pendingAmount)}
+                </span>
+                <span className="text-[11px] text-amber-800 font-medium mt-1 block">
+                  {financials.revenue > 0 ? (100 - financials.receivedPercent).toFixed(1) : 0}% em falta
+                </span>
+              </div>
+
+              <div className={`rounded-xl border p-3.5 ${
+                financials.cashBalance >= 0
+                  ? 'bg-blue-50/70 border-blue-200 text-blue-950'
+                  : 'bg-rose-50/70 border-rose-200 text-rose-950'
+              }`}>
+                <span className="text-[10px] uppercase font-bold text-slate-500 block tracking-wider">
+                  Saldo de Caixa Real
+                </span>
+                <span className={`text-lg font-mono font-bold mt-0.5 block ${
+                  financials.cashBalance >= 0 ? 'text-blue-700' : 'text-rose-700'
+                }`}>
+                  {formatCurrency(financials.cashBalance)}
+                </span>
+                <span className="text-[11px] opacity-80 mt-1 block">
+                  {financials.cashBalance >= 0 ? 'Recebimentos cobrem custos' : 'Empresa a adiantar custos'}
+                </span>
+              </div>
+            </div>
+
+            {/* Visual Progress Bar */}
+            <div className="space-y-1.5 pt-2">
+              <div className="flex justify-between items-center text-xs font-semibold">
+                <span className="text-slate-700">Progresso dos Recebimentos:</span>
+                <span className={
+                  financials.receivedPercent >= 100
+                    ? 'text-emerald-600 font-bold'
+                    : financials.receivedPercent > 0
+                    ? 'text-amber-600 font-bold'
+                    : 'text-slate-500'
+                }>
+                  {financials.receivedPercent >= 100
+                    ? '✓ Totalmente Liquidado (100%)'
+                    : financials.receivedPercent > 0
+                    ? `${financials.receivedPercent.toFixed(1)}% recebido`
+                    : '0% recebido (Por receber)'}
+                </span>
+              </div>
+              <div className="h-3.5 w-full bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    financials.receivedPercent >= 100
+                      ? 'bg-emerald-500'
+                      : financials.receivedPercent > 0
+                      ? 'bg-amber-500'
+                      : 'bg-slate-300'
+                  }`}
+                  style={{ width: `${Math.min(100, financials.receivedPercent)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Table of Received Payments */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Histórico de Pagamentos Recebidos ({(currentWork.payments || []).length})
+              </h5>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xs">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase text-[11px] font-semibold">
+                  <tr>
+                    <th className="p-3.5">Data</th>
+                    <th className="p-3.5">Descrição / Tranche</th>
+                    <th className="p-3.5">Forma de Pagamento</th>
+                    <th className="p-3.5">Nº Recibo / Doc</th>
+                    <th className="p-3.5">Notas</th>
+                    <th className="p-3.5 text-right">Valor Recebido</th>
+                    <th className="p-3.5 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(!currentWork.payments || currentWork.payments.length === 0) ? (
+                    <tr>
+                      <td colSpan={7} className="p-10 text-center text-slate-400">
+                        <Wallet className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                        <p className="font-semibold text-slate-600">Nenhum recebimento registado nesta obra.</p>
+                        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                          O sistema não assume recebimento antecipado. Clique em &quot;+ Registar Recebimento&quot; para registar o adiantamento inicial ou tranches já recebidas do cliente.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPayment(null);
+                            setIsPaymentModalOpen(true);
+                          }}
+                          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-xs transition-colors cursor-pointer"
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>Registar 1º Recebimento</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ) : (
+                    currentWork.payments.map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="p-3.5 text-slate-700 font-medium whitespace-nowrap">
+                          {formatDate(p.date)}
+                        </td>
+                        <td className="p-3.5 font-bold text-slate-900">
+                          {p.description}
+                        </td>
+                        <td className="p-3.5 whitespace-nowrap">
+                          <span className="inline-block rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                            {p.paymentMethod || 'Transferência'}
+                          </span>
+                        </td>
+                        <td className="p-3.5 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                          {p.receiptNumber || '—'}
+                        </td>
+                        <td className="p-3.5 text-slate-500 text-[11px] max-w-xs truncate">
+                          {p.notes || '—'}
+                        </td>
+                        <td className="p-3.5 text-right font-mono font-bold text-emerald-600 text-sm whitespace-nowrap">
+                          {formatCurrency(p.amount)}
+                        </td>
+                        <td className="p-3.5 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingPayment(p);
+                                setIsPaymentModalOpen(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                              title="Editar Recebimento"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeletingPayment(p)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Eliminar Recebimento"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                {currentWork.payments && currentWork.payments.length > 0 && (
+                  <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold text-xs">
+                    <tr>
+                      <td colSpan={5} className="p-3.5 text-slate-700 uppercase tracking-wider text-[11px]">
+                        Total Já Recebido do Cliente
+                      </td>
+                      <td className="p-3.5 text-right font-mono text-emerald-700 text-sm">
+                        {formatCurrency(financials.receivedTotal)}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
             </div>
           </div>
         </div>
@@ -736,6 +1041,41 @@ export const WorkDetailView: React.FC<WorkDetailViewProps> = ({
         work={currentWork}
         isOpen={isEditWorkOpen}
         onClose={() => setIsEditWorkOpen(false)}
+      />
+
+      {/* Editor Modal for in-place quote correction */}
+      <ProposalEditorModal
+        proposal={editingProposalFromWork}
+        isOpen={!!editingProposalFromWork}
+        onClose={() => setEditingProposalFromWork(null)}
+      />
+
+      {/* Work Payment Modal */}
+      <WorkPaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => {
+          setIsPaymentModalOpen(false);
+          setEditingPayment(null);
+        }}
+        work={currentWork}
+        payment={editingPayment}
+      />
+
+      {/* Confirmation Dialog for Deleting Payment */}
+      <ConfirmDialog
+        isOpen={!!deletingPayment}
+        title="Eliminar Recebimento"
+        message={`Tem a certeza de que deseja eliminar o registo de recebimento "${deletingPayment?.description}" no valor de ${formatCurrency(deletingPayment?.amount || 0)}?`}
+        confirmText="Eliminar Recebimento"
+        cancelText="Cancelar"
+        variant="danger"
+        onConfirm={() => {
+          if (deletingPayment) {
+            removeWorkPayment(currentWork.id, deletingPayment.id);
+            setDeletingPayment(null);
+          }
+        }}
+        onCancel={() => setDeletingPayment(null)}
       />
 
       {/* Confirmation Dialog for Deleting Work */}

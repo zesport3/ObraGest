@@ -10,6 +10,29 @@
     <meta property="og:description" content="Aplicação profissional de gestão de obras, faturas com análise inteligente, inventários, orçamentos, trabalhadores, despesas e apuramento de IVA." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Suppress Vite HMR / WebSocket connection errors in preview iframe as per environment specifications
+      window.addEventListener('error', function(e) {
+        if (
+          e?.message?.includes('WebSocket') ||
+          e?.message?.includes('createWebSocketModuleRunnerTransport') ||
+          e?.filename?.includes('@vite/client') ||
+          (e?.error && e?.error?.stack && e?.error?.stack.includes('@vite/client'))
+        ) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          return true;
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function(e) {
+        var reason = e?.reason;
+        var str = (reason && (reason.stack || reason.message)) ? (reason.stack || reason.message) : String(reason || '');
+        if (str.includes('WebSocket') || str.includes('createWebSocketModuleRunnerTransport') || str.includes('@vite/client')) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }
+      }, true);
+    </script>
   </head>
   <body>
     <div id="root"></div>

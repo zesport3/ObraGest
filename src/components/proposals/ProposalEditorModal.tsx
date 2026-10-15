@@ -3,7 +3,7 @@ import { Modal } from '../common/Modal';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { Proposal, ProposalStatus } from '../../types';
 import { useApp } from '../../context/AppContext';
-import { User, FileText, CheckCircle, Calculator, Trash2 } from 'lucide-react';
+import { User, FileText, CheckCircle, Calculator, Trash2, HardHat, Info, Check, Lock } from 'lucide-react';
 import { formatCurrency, getTodayDateString } from '../../utils/formatters';
 
 interface ProposalEditorModalProps {
@@ -25,6 +25,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
     updateProposal,
     deleteProposal,
     companySettings,
+    works,
   } = useApp();
 
   const [number, setNumber] = useState('');
@@ -37,19 +38,29 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
   const [clientPhone, setClientPhone] = useState('');
   const [clientEmail, setClientEmail] = useState('');
 
-  // 1. Quadro branco para descrição do orçamento
+  // 1. Quadro para descrição do orçamento
   const [description, setDescription] = useState('');
 
-  // 2. Quadro branco para condições de pagamento
+  // 2. Quadro para condições de pagamento
   const [paymentTerms, setPaymentTerms] = useState('');
 
-  // 3. Valor do orçamento e taxa de IVA
+  // 3. Notas / Observações adicionais
+  const [notes, setNotes] = useState('');
+
+  // 4. Valor do orçamento e taxa de IVA
   const [amount, setAmount] = useState<number>(0);
   const [vatRate, setVatRate] = useState<number>(23);
 
-  const [status, setStatus] = useState<ProposalStatus>('Pendente');
+  const [syncWorkRevenue, setSyncWorkRevenue] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+
+  // Check if there is an associated work
+  const associatedWork = proposal
+    ? works.find(
+        (w) => w.proposalId === proposal.id || (proposal.workId && w.id === proposal.workId)
+      )
+    : null;
 
   useEffect(() => {
     setFormError(null);
@@ -65,12 +76,13 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
       setClientEmail(proposal.clientEmail || '');
       setDescription(proposal.description || '');
       setPaymentTerms(proposal.paymentTerms || '');
+      setNotes(proposal.notes || '');
       setAmount(proposal.subtotal || 0);
 
       // Extract vat rate from items or default to 23
       const firstItemVat = proposal.items?.[0]?.vatRate;
       setVatRate(firstItemVat !== undefined ? firstItemVat : 23);
-      setStatus(proposal.status);
+      setSyncWorkRevenue(true);
     } else {
       const nextNum = getNextProposalNumber();
       setNumber(nextNum);
@@ -89,9 +101,10 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
       setClientEmail('');
       setDescription('');
       setPaymentTerms('');
+      setNotes('');
       setAmount(0);
       setVatRate(companySettings.defaultVatRate || 23);
-      setStatus('Pendente');
+      setSyncWorkRevenue(true);
     }
   }, [proposal, isOpen, companySettings]);
 
@@ -104,6 +117,10 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
     e.preventDefault();
     setFormError(null);
 
+    if (!number.trim()) {
+      setFormError('Por favor introduza o número do orçamento.');
+      return;
+    }
     if (!clientName.trim()) {
       setFormError('Por favor introduza o nome do cliente.');
       return;
@@ -120,7 +137,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
     // Clean single item representing the works description for compatibility
     const singleItem = [
       {
-        id: `item-${Date.now()}`,
+        id: proposal?.items?.[0]?.id || `item-${Date.now()}`,
         description: description.substring(0, 150),
         quantity: 1,
         unit: 'vg',
@@ -131,20 +148,22 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
       },
     ];
 
+    const proposalNumber = proposal ? proposal.number : number.trim();
+
     const payload = {
-      number,
+      number: proposalNumber,
       date,
       validUntil,
       clientId: clientId || `cli-${Date.now()}`,
-      clientName,
-      clientNif,
-      clientAddress,
-      clientPhone,
-      clientEmail,
+      clientName: clientName.trim(),
+      clientNif: clientNif.trim(),
+      clientAddress: clientAddress.trim(),
+      clientPhone: clientPhone.trim(),
+      clientEmail: clientEmail.trim(),
       description,
       paymentTerms,
-      notes: '',
-      status,
+      notes,
+      status: proposal ? proposal.status : ('Pendente' as ProposalStatus),
       items: singleItem,
       subtotal,
       discountTotal: 0,
@@ -154,7 +173,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
 
     let savedResult: Proposal;
     if (proposal) {
-      updateProposal(proposal.id, payload);
+      updateProposal(proposal.id, payload, { syncWorkRevenue });
       savedResult = { ...proposal, ...payload };
     } else {
       savedResult = addProposal(payload);
@@ -168,8 +187,12 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={proposal ? `Editar Orçamento ${proposal.number}` : `Novo Orçamento: ${number}`}
-      subtitle="Preencha a descrição, condições de pagamento e valor com IVA"
+      title={proposal ? `Editar Orçamento: ${proposal.number}` : `Novo Orçamento: ${number}`}
+      subtitle={
+        proposal
+          ? 'Corrija a descrição dos trabalhos, dados do cliente, condições de pagamento ou valores em caso de engano'
+          : 'Preencha a descrição, condições de pagamento e valor com IVA'
+      }
       maxWidth="3xl"
     >
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -179,17 +202,51 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
           </div>
         )}
 
-        {/* Header Info */}
+        {/* Associated Work Callout (if editing an existing proposal that has a work) */}
+        {proposal && associatedWork && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-3.5 text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-start gap-2.5">
+              <HardHat className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-amber-950">
+                  Orçamento associado à Obra: &quot;{associatedWork.name}&quot;
+                </p>
+                <p className="text-[11px] text-amber-800 mt-0.5">
+                  Se se enganou no orçamento, as alterações aqui feitas serão guardadas no documento e refletidas na obra.
+                </p>
+              </div>
+            </div>
+            <label className="inline-flex items-center gap-2 cursor-pointer font-semibold text-amber-950 shrink-0 text-xs bg-white px-3 py-1.5 rounded-lg border border-amber-300 shadow-2xs hover:bg-amber-50 transition-colors">
+              <input
+                type="checkbox"
+                checked={syncWorkRevenue}
+                onChange={(e) => setSyncWorkRevenue(e.target.checked)}
+                className="rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+              />
+              <span>Sincronizar receita da Obra ({formatCurrency(subtotal)})</span>
+            </label>
+          </div>
+        )}
+
+        {/* Header Info (Numeração sequencial fixa, sem alteração de número e sem seleção de estado) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
           <div>
-            <label className="text-[11px] font-semibold text-slate-700 block">Número *</label>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold text-slate-700 flex items-center gap-1">
+                <Lock className="h-3 w-3 text-slate-400" />
+                Número do Orçamento
+              </label>
+              <span className="text-[10px] text-slate-400 font-medium">
+                (Sequencial fixo)
+              </span>
+            </div>
             <input
               type="text"
-              required
-              readOnly={!!proposal}
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
-              className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-mono font-bold text-slate-900"
+              readOnly
+              disabled
+              value={proposal ? proposal.number : number}
+              className="w-full mt-1 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-mono font-bold text-slate-700 cursor-not-allowed select-none"
+              title="A numeração é gerada sequencialmente pelo sistema e não pode ser alterada"
             />
           </div>
           <div>
@@ -199,7 +256,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
               required
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800"
+              className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-amber-500 focus:outline-hidden"
             />
           </div>
           <div>
@@ -209,7 +266,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
               required
               value={validUntil}
               onChange={(e) => setValidUntil(e.target.value)}
-              className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800"
+              className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-amber-500 focus:outline-hidden"
             />
           </div>
         </div>
@@ -231,7 +288,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
                 required
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
-                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800"
+                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-amber-500 focus:outline-hidden"
                 placeholder="ex: Dr. João Ferreira..."
               />
             </div>
@@ -241,7 +298,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
                 type="text"
                 value={clientNif}
                 onChange={(e) => setClientNif(e.target.value)}
-                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 font-mono"
+                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 font-mono focus:border-amber-500 focus:outline-hidden"
                 placeholder="ex: 215 678 901"
               />
             </div>
@@ -251,7 +308,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
                 type="text"
                 value={clientPhone}
                 onChange={(e) => setClientPhone(e.target.value)}
-                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800"
+                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-amber-500 focus:outline-hidden"
                 placeholder="912 345 678"
               />
             </div>
@@ -264,7 +321,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
                 type="text"
                 value={clientAddress}
                 onChange={(e) => setClientAddress(e.target.value)}
-                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800"
+                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-amber-500 focus:outline-hidden"
                 placeholder="Rua, número, localidade..."
               />
             </div>
@@ -274,7 +331,7 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
                 type="email"
                 value={clientEmail}
                 onChange={(e) => setClientEmail(e.target.value)}
-                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800"
+                className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-amber-500 focus:outline-hidden"
                 placeholder="cliente@email.pt"
               />
             </div>
@@ -283,9 +340,14 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
 
         {/* 1. QUADRO BRANCO PARA DESCRIÇÃO DO ORÇAMENTO */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-            Descrição do Orçamento *
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+              Descrição dos Trabalhos Orçamentados *
+            </label>
+            <span className="text-[10px] text-slate-400">
+              {description.length} caracteres
+            </span>
+          </div>
           <textarea
             required
             rows={5}
@@ -298,9 +360,35 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
 
         {/* 2. QUADRO BRANCO PARA CONDIÇÕES DE PAGAMENTO */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-            Condições de Pagamento
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+              Condições de Pagamento
+            </label>
+            <div className="hidden sm:flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-400">Exemplos rápidos:</span>
+              <button
+                type="button"
+                onClick={() => setPaymentTerms('50% na adjudicação do orçamento e 50% na conclusão e entrega dos trabalhos.')}
+                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded cursor-pointer"
+              >
+                50% / 50%
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentTerms('30% na adjudicação, 40% a meio dos trabalhos e 30% na conclusão final.')}
+                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded cursor-pointer"
+              >
+                30% / 40% / 30%
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentTerms('Pronto pagamento após receção da fatura.')}
+                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded cursor-pointer"
+              >
+                Pronto Pagamento
+              </button>
+            </div>
+          </div>
           <textarea
             rows={3}
             value={paymentTerms}
@@ -310,7 +398,21 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
           />
         </div>
 
-        {/* 3. VALOR E TAXA DE IVA */}
+        {/* 3. OBSERVAÇÕES ADICIONAIS (OPCIONAL) */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+            Observações / Notas Adicionais (Opcional)
+          </label>
+          <textarea
+            rows={2}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 bg-white p-3 text-xs text-slate-900 leading-relaxed focus:border-amber-500 focus:outline-hidden"
+            placeholder="Notas adicionais sobre prazos, garantias de equipamento, acessos ao imóvel, licenças camarárias, etc."
+          />
+        </div>
+
+        {/* 4. VALOR E TAXA DE IVA */}
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -349,9 +451,9 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
           {/* Totals Summary */}
           <div className="flex flex-col sm:flex-row items-end sm:items-center justify-between gap-4 rounded-xl bg-slate-900 p-4 text-white">
             <div className="text-xs text-slate-400">
-              {status === 'Aceite' ? (
+              {proposal?.status === 'Aceite' ? (
                 <span className="text-emerald-400 font-semibold">
-                  ✓ Orçamento Aceite: Poderá gerar a respetiva Obra com 1 clique!
+                  ✓ Orçamento Aceite
                 </span>
               ) : (
                 'O valor do IVA e total são calculados automaticamente.'
@@ -393,15 +495,16 @@ export const ProposalEditorModal: React.FC<ProposalEditorModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-amber-500 hover:bg-amber-600 px-5 py-2 text-xs font-bold text-slate-950 shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 px-5 py-2 text-xs font-bold text-slate-950 shadow-xs transition-colors cursor-pointer"
             >
-              {proposal ? 'Guardar Alterações' : 'Emitir Orçamento'}
+              <Check className="h-4 w-4" />
+              <span>{proposal ? 'Guardar Alterações' : 'Emitir Orçamento'}</span>
             </button>
           </div>
         </div>

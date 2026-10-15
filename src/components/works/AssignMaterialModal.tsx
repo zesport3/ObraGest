@@ -101,7 +101,7 @@ export const AssignMaterialModal: React.FC<AssignMaterialModalProps> = ({
             <div className="flex justify-between">
               <span className="text-slate-500">Stock Disponível em Armazém:</span>
               <span className={`font-mono font-bold ${
-                selectedMaterial.quantity <= selectedMaterial.minStock ? 'text-rose-600' : 'text-slate-900'
+                selectedMaterial.quantity <= 0 ? 'text-rose-600' : 'text-slate-900'
               }`}>
                 {selectedMaterial.quantity} {selectedMaterial.unit}
               </span>

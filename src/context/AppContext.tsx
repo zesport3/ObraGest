@@ -7,6 +7,7 @@ import {
   StockMovement,
   Proposal,
   Work,
+  WorkPayment,
   Worker,
   WorkHourLog,
   WorkerPayment,
@@ -80,7 +81,7 @@ interface AppContextType {
   // Proposals
   getNextProposalNumber: () => string;
   addProposal: (proposal: Omit<Proposal, 'id' | 'createdAt' | 'number'> & { number?: string }) => Proposal;
-  updateProposal: (id: string, proposal: Partial<Proposal>) => void;
+  updateProposal: (id: string, proposal: Partial<Proposal>, options?: { syncWorkRevenue?: boolean }) => void;
   deleteProposal: (id: string) => void;
   convertProposalToWork: (proposalId: string) => Work | null;
 
@@ -90,6 +91,9 @@ interface AppContextType {
   deleteWork: (id: string) => void;
   addWorkOtherCost: (workId: string, cost: { description: string; category: string; amount: number; date: string }) => void;
   removeWorkOtherCost: (workId: string, costId: string) => void;
+  addWorkPayment: (workId: string, payment: Omit<WorkPayment, 'id' | 'createdAt'>) => void;
+  updateWorkPayment: (workId: string, paymentId: string, payment: Partial<WorkPayment>) => void;
+  removeWorkPayment: (workId: string, paymentId: string) => void;
   assignMaterialToWork: (
     workId: string,
     materialId: string,
@@ -530,7 +534,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           category: item.category || 'Geral',
           unit: item.unit || 'un',
           quantity: item.quantity,
-          minStock: Math.max(5, Math.round(item.quantity * 0.2)),
+          minStock: 0,
           averagePrice: item.unitPrice,
           totalValue: Number((item.quantity * item.unitPrice).toFixed(2)),
           lastPurchaseDate: invoiceData.date,
@@ -666,8 +670,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newProposal;
   };
 
-  const updateProposal = (id: string, updated: Partial<Proposal>) => {
-    setProposals((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
+  const updateProposal = (
+    id: string,
+    updated: Partial<Proposal>,
+    options?: { syncWorkRevenue?: boolean }
+  ) => {
+    // A numeração é estritamente imutável e não pode ser alterada
+    setProposals((prev) =>
+      prev.map((p) => {
+        if (p.id === id) {
+          const { number: _ignoreNumber, ...restUpdated } = updated;
+          return { ...p, ...restUpdated };
+        }
+        return p;
+      })
+    );
+
+    // Sincronizar receita da obra associada se o valor tiver sido alterado
+    setWorks((prev) =>
+      prev.map((w) => {
+        if (w.proposalId === id || (updated.workId && w.id === updated.workId)) {
+          const updates: Partial<Work> = {};
+          if (options?.syncWorkRevenue && updated.subtotal !== undefined) {
+            updates.revenue = updated.subtotal;
+          }
+          return Object.keys(updates).length > 0 ? { ...w, ...updates } : w;
+        }
+        return w;
+      })
+    );
   };
 
   const deleteProposal = (id: string) => {
@@ -784,6 +815,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return {
           ...w,
           otherCosts: (w.otherCosts || []).filter((c) => c.id !== costId),
+        };
+      })
+    );
+  };
+
+  const addWorkPayment = (
+    workId: string,
+    payment: Omit<WorkPayment, 'id' | 'createdAt'>
+  ) => {
+    setWorks((prev) =>
+      prev.map((w) => {
+        if (w.id !== workId) return w;
+        const newPayment: WorkPayment = {
+          ...payment,
+          id: `wp-${Date.now()}`,
+          createdAt: getTodayDateString(),
+        };
+        return {
+          ...w,
+          payments: [...(w.payments || []), newPayment],
+        };
+      })
+    );
+  };
+
+  const updateWorkPayment = (
+    workId: string,
+    paymentId: string,
+    updated: Partial<WorkPayment>
+  ) => {
+    setWorks((prev) =>
+      prev.map((w) => {
+        if (w.id !== workId) return w;
+        return {
+          ...w,
+          payments: (w.payments || []).map((p) =>
+            p.id === paymentId ? { ...p, ...updated } : p
+          ),
+        };
+      })
+    );
+  };
+
+  const removeWorkPayment = (workId: string, paymentId: string) => {
+    setWorks((prev) =>
+      prev.map((w) => {
+        if (w.id !== workId) return w;
+        return {
+          ...w,
+          payments: (w.payments || []).filter((p) => p.id !== paymentId),
         };
       })
     );
@@ -1286,6 +1367,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteWork,
         addWorkOtherCost,
         removeWorkOtherCost,
+        addWorkPayment,
+        updateWorkPayment,
+        removeWorkPayment,
         assignMaterialToWork,
 
         addWorker,

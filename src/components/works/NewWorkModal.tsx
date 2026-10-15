@@ -126,6 +126,7 @@ export const NewWorkModal: React.FC<NewWorkModalProps> = ({
       revenue: Number(revenue) || 0,
       notes,
       otherCosts: work ? work.otherCosts : [],
+      payments: work ? (work.payments || []) : [],
     };
 
     let savedResult: Work;
@@ -239,7 +240,7 @@ export const NewWorkModal: React.FC<NewWorkModalProps> = ({
 
           <div>
             <label className="text-xs font-semibold text-slate-700 block">
-              Receita / Valor Contratado (€ sem IVA) *
+              Valor Contratado da Obra (€ sem IVA) *
             </label>
             <input
               type="number"
@@ -250,6 +251,9 @@ export const NewWorkModal: React.FC<NewWorkModalProps> = ({
               onChange={(e) => setRevenue(parseFloat(e.target.value) || 0)}
               className="w-full mt-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 font-mono font-bold"
             />
+            <p className="text-[10px] text-slate-500 mt-1">
+              Valor total adjudicado. O sistema não assume recebimento antecipado: indique os valores já recebidos (adiantamentos e tranches) na ficha da obra.
+            </p>
           </div>
         </div>
 

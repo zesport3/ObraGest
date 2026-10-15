@@ -179,6 +179,24 @@ export interface WorkOtherCost {
   amount: number;
 }
 
+export type PaymentMethod =
+  | 'Transferência'
+  | 'Numerário'
+  | 'Cheque'
+  | 'MBWay'
+  | 'Outro';
+
+export interface WorkPayment {
+  id: string;
+  date: string; // YYYY-MM-DD
+  amount: number; // valor recebido em €
+  paymentMethod?: PaymentMethod;
+  description: string; // ex: "Adiantamento 30%", "1ª Tranche", etc.
+  receiptNumber?: string; // Recibo nº ou Fatura nº
+  notes?: string;
+  createdAt: string;
+}
+
 export interface Work {
   id: string;
   name: string;
@@ -191,7 +209,8 @@ export interface Work {
   status: WorkStatus;
   proposalId?: string;
   proposalNumber?: string;
-  revenue: number;
+  revenue: number; // Valor contratado / orçamentado da obra (sem IVA)
+  payments?: WorkPayment[]; // Valores já recebidos pelo cliente (adiantamentos e tranches)
   notes: string;
   otherCosts: WorkOtherCost[];
   createdAt: string;
